@@ -3,104 +3,76 @@ $origGeo = (Get-WinHomeLocation).GeoId
 
 Set-WinHomeLocation -GeoId 94  # Ireland (EU)
 
-Write-Host "Downloading NanaRun (MinSudo)..." -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "Windows EU Region Privacy Enabler" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "INSTRUCTIONS:" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "1. Download NanaRun manually:" -ForegroundColor White
+Write-Host "   Opening download page in your browser..." -ForegroundColor Gray
+Start-Process "https://github.com/M2Team/NanaRun/releases/download/1.0.92.0/NanaRun_1.0_Preview3_1.0.92.0.zip"
 
-# Create temp directory for NanaRun
-$nanarunDir = "$env:TEMP\NanaRun"
-if (!(Test-Path $nanarunDir)) {
-    New-Item -Path $nanarunDir -ItemType Directory -Force | Out-Null
-}
+Write-Host ""
+Write-Host "2. Windows Defender will likely block it. To allow it:" -ForegroundColor White
+Write-Host "   - Open Windows Security" -ForegroundColor Gray
+Write-Host "   - Go to 'Virus & threat protection'" -ForegroundColor Gray
+Write-Host "   - Click 'Protection history'" -ForegroundColor Gray
+Write-Host "   - Find the blocked NanaRun download" -ForegroundColor Gray
+Write-Host "   - Click 'Allow on device'" -ForegroundColor Gray
 
-# Download NanaRun
-$nanarunUrl = "https://github.com/M2Team/NanaRun/releases/download/1.0.92.0/NanaRun_1.0_Preview3_1.0.92.0.zip"
-$nanarunZip = "$nanarunDir\NanaRun.zip"
-$nanarunExtracted = "$nanarunDir\Extracted"
+Write-Host ""
+Write-Host "3. Extract the downloaded ZIP file" -ForegroundColor White
 
-try {
-    Write-Host "Downloading NanaRun from GitHub..." -ForegroundColor Yellow
-    Invoke-WebRequest -Uri $nanarunUrl -OutFile $nanarunZip -UseBasicParsing
+Write-Host ""
+Write-Host "4. Once extracted, press any key to continue..." -ForegroundColor Yellow
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+
+# Ask user for the extracted folder location
+Write-Host ""
+Write-Host "Enter the path to the extracted NanaRun folder" -ForegroundColor Yellow
+Write-Host "(e.g., C:\Users\YourName\Downloads\NanaRun_1.0_Preview3_1.0.92.0)" -ForegroundColor Gray
+$extractedPath = Read-Host "Path"
+
+$arch = if ([System.Environment]::Is64BitOperatingSystem) { "x64" } else { "Win32" }
+$minSudoExe = Join-Path $extractedPath "$arch\MinSudo.exe"
+
+if (Test-Path $minSudoExe) {
+    Write-Host ""
+    Write-Host "MinSudo found!" -ForegroundColor Green
+    Write-Host "Deleting DeviceRegion registry key with TrustedInstaller privileges..." -ForegroundColor Cyan
+    Write-Host ""
     
-    Write-Host "Extracting NanaRun..." -ForegroundColor Yellow
-    Expand-Archive -Path $nanarunZip -DestinationPath $nanarunExtracted -Force
+    # Run the deletion command
+    $result = & $minSudoExe -U:T -P:E reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion" /f 2>&1
     
-    # Determine architecture and find MinSudo.exe
-    $arch = if ([System.Environment]::Is64BitOperatingSystem) { "x64" } else { "Win32" }
-    $minSudoExe = "$nanarunExtracted\$arch\MinSudo.exe"
+    Start-Sleep -Seconds 1
     
-    if (Test-Path $minSudoExe) {
-        Write-Host "MinSudo found successfully!" -ForegroundColor Green
-        Write-Host "Using: $minSudoExe" -ForegroundColor Gray
-        
-        # Create deletion batch script (simpler and more reliable for reg delete)
-        $deleteScript = @'
-@echo off
-echo ========================================
-echo Deleting DeviceRegion registry key...
-echo ========================================
-echo.
-
-reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion" /f
-
-if %errorlevel% equ 0 (
-    echo.
-    echo ========================================
-    echo SUCCESS: DeviceRegion key deleted!
-    echo ========================================
-) else (
-    echo.
-    echo ========================================
-    echo FAILED: Could not delete DeviceRegion key
-    echo Error code: %errorlevel%
-    echo ========================================
-)
-
-echo.
-echo Press any key to close this window...
-pause >nul
-'@
-        
-        $deleteScriptPath = "$nanarunDir\delete_deviceregion.bat"
-        $deleteScript | Out-File -FilePath $deleteScriptPath -Encoding ASCII -Force
-        
-        Write-Host "`nLaunching MinSudo with TrustedInstaller privileges..." -ForegroundColor Cyan
-        Write-Host "A command prompt window will open - please wait for the result." -ForegroundColor Yellow
+    # Verify deletion
+    if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion") {
         Write-Host ""
-        
-        # MinSudo command format: MinSudo.exe -U:T -P:E <command>
-        # -U:T = TrustedInstaller user
-        # -P:E = Elevated privilege
-        & $minSudoExe -U:T -P:E cmd.exe /c $deleteScriptPath
-        
-        # Wait a moment for the operation to complete
-        Start-Sleep -Seconds 2
-        
-        # Verify if the key is gone
-        Write-Host "`nVerifying deletion..." -ForegroundColor Cyan
-        if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion") {
-            Write-Host "STATUS: DeviceRegion key still exists" -ForegroundColor Red
-            Write-Host "The key may be protected or instantly recreated by Windows." -ForegroundColor Yellow
-        } else {
-            Write-Host "STATUS: DeviceRegion key successfully deleted!" -ForegroundColor Green
-        }
-        
+        Write-Host "STATUS: DeviceRegion key still exists" -ForegroundColor Red
+        Write-Host "Result: $result" -ForegroundColor Gray
     } else {
-        Write-Host "ERROR: Could not find MinSudo.exe at expected path: $minSudoExe" -ForegroundColor Red
-        Write-Host "Available files:" -ForegroundColor Gray
-        Get-ChildItem -Path $nanarunExtracted -Recurse | ForEach-Object { Write-Host "  $($_.FullName)" -ForegroundColor Gray }
+        Write-Host ""
+        Write-Host "========================================" -ForegroundColor Green
+        Write-Host "SUCCESS: DeviceRegion key deleted!" -ForegroundColor Green
+        Write-Host "========================================" -ForegroundColor Green
     }
-    
-} catch {
-    Write-Host "ERROR: Failed to download or extract NanaRun: $_" -ForegroundColor Red
-    Write-Host "You can manually download NanaRun from: https://github.com/M2Team/NanaRun/releases" -ForegroundColor Yellow
+} else {
+    Write-Host ""
+    Write-Host "ERROR: MinSudo.exe not found at: $minSudoExe" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Make sure you:" -ForegroundColor Yellow
+    Write-Host "1. Extracted the ZIP file" -ForegroundColor White
+    Write-Host "2. Entered the correct path to the extracted folder" -ForegroundColor White
 }
-
-# Cleanup
-Write-Host "`nCleaning up temporary files..." -ForegroundColor Gray
-Start-Sleep -Seconds 2
-Remove-Item -Path $nanarunDir -Recurse -Force -ErrorAction SilentlyContinue
 
 # Open Settings
+Write-Host ""
+Write-Host "Opening Windows Settings..." -ForegroundColor Cyan
 Start-Process "ms-settings:privacy"
 
-Write-Host "`nMade with love by Harman Singh Hira"
-Write-Host "https://me.hsinghhira.me"
+Write-Host ""
+Write-Host "Made with love by Harman Singh Hira" -ForegroundColor Gray
+Write-Host "https://me.hsinghhira.me" -ForegroundColor Gray
