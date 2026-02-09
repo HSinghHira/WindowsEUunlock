@@ -1,44 +1,42 @@
 # Store original GeoID
 $origGeo = (Get-WinHomeLocation).GeoId
 
-Set-WinHomeLocation -GeoId 94  # Ireland (EU)
+Write-Host "Setting Windows region to EU for privacy options..." -ForegroundColor Cyan
 
-Write-Host "Attempting to delete DeviceRegion using SYSTEM privileges..." -ForegroundColor Cyan
+# Set GeoID to a European country (e.g., 94 = Ireland, 242 = Sweden, 84 = France)
+Set-WinHomeLocation -GeoId 94
 
-# Create a PowerShell script to run as SYSTEM
-$systemScript = @'
-$regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion"
-if (Test-Path $regPath) {
-    # Take ownership
-    $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
-        "SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel",
-        $true
-    )
-    
-    # Try to delete the subkey
-    try {
-        $key.DeleteSubKeyTree("DeviceRegion", $false)
-        Write-Output "SUCCESS"
-    } catch {
-        Write-Output "FAILED: $_"
+# Set the registry values that control EU privacy features
+$regPaths = @(
+    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection",
+    "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Privacy"
+)
+
+# Enable EU privacy settings
+try {
+    # Set region to EEA (European Economic Area)
+    if (!(Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection")) {
+        New-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection" -Force | Out-Null
     }
-    $key.Close()
-} else {
-    Write-Output "KEY_NOT_FOUND"
+    
+    Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection" -Name "AllowTelemetry" -Value 0 -Type DWord -Force
+    
+    # Set language/region to EU country
+    Set-ItemProperty -Path "HKCU:\Control Panel\International\Geo" -Name "Nation" -Value 94 -Type String -Force
+    
+    Write-Host "EU region settings applied!" -ForegroundColor Green
+    Write-Host "Opening Windows Settings to verify..." -ForegroundColor Yellow
+    
+} catch {
+    Write-Host "Error applying settings: $_" -ForegroundColor Red
 }
-'@
-
-$systemScript | Out-File -FilePath "$env:TEMP\delete_deviceregion.ps1" -Encoding UTF8 -Force
-
-# Run as SYSTEM using PSExec
-$result = & PsExec64.exe -accepteula -s -i powershell.exe -ExecutionPolicy Bypass -File "$env:TEMP\delete_deviceregion.ps1" 2>&1
-
-Write-Host "Result: $result"
-
-Remove-Item "$env:TEMP\delete_deviceregion.ps1" -Force -ErrorAction SilentlyContinue
 
 # Open Settings
 Start-Process "ms-settings:privacy"
+
+Write-Host "`nNOTE: You may need to restart Windows for all privacy options to appear." -ForegroundColor Yellow
+Write-Host "`nTo revert to your original region later, run:" -ForegroundColor Cyan
+Write-Host "Set-WinHomeLocation -GeoId $origGeo" -ForegroundColor White
 
 Write-Host "`nMade with love by Harman Singh Hira"
 Write-Host "https://me.hsinghhira.me"
