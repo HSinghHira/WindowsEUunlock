@@ -1,84 +1,97 @@
 # Store original GeoID
 $origGeo = (Get-WinHomeLocation).GeoId
 
-Set-WinHomeLocation -GeoId 94  # Ireland (EU)
-
+Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Windows EU Region Privacy Enabler" -ForegroundColor Cyan
-Write-Host "Ultimate Nuclear Option" -ForegroundColor Cyan
+Write-Host "  Windows EU Region Privacy Enabler" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
-
-Write-Host "The DeviceRegion key appears to have kernel-level protection." -ForegroundColor Yellow
-Write-Host "Let's try a different approach: RENAMING instead of deleting" -ForegroundColor Yellow
+Write-Host "This script will:" -ForegroundColor White
+Write-Host "  1. Add temporary Windows Defender exclusion" -ForegroundColor Gray
+Write-Host "  2. Download NanaRun automatically" -ForegroundColor Gray
+Write-Host "  3. Delete DeviceRegion registry values" -ForegroundColor Gray
+Write-Host "  4. Enable EU privacy options" -ForegroundColor Gray
+Write-Host "  5. Clean up and remove exclusion" -ForegroundColor Gray
 Write-Host ""
 
-# Get MinSudo path
-Write-Host "Enter the path to the extracted NanaRun folder" -ForegroundColor White
-Write-Host "Or press ENTER to use default: C:\Users\$env:USERNAME\Downloads\NanaRun_1.0_Preview3_1.0.92.0" -ForegroundColor Gray
-$extractedPath = Read-Host "Path"
+# Set up paths
+$nanarunDir = "$env:TEMP\NanaRun_WinEU"
+$nanarunUrl = "https://github.com/M2Team/NanaRun/releases/download/1.0.92.0/NanaRun_1.0_Preview3_1.0.92.0.zip"
+$nanarunZip = "$nanarunDir\NanaRun.zip"
+$nanarunExtracted = "$nanarunDir\Extracted"
 
-if ([string]::IsNullOrWhiteSpace($extractedPath)) {
-    $extractedPath = "C:\Users\$env:USERNAME\Downloads\NanaRun_1.0_Preview3_1.0.92.0"
+# Create directory
+if (!(Test-Path $nanarunDir)) {
+    New-Item -Path $nanarunDir -ItemType Directory -Force | Out-Null
 }
 
+# Step 1: Add Windows Defender exclusion
+Write-Host "[1/5] Adding Windows Defender exclusion..." -ForegroundColor Yellow
+try {
+    Add-MpPreference -ExclusionPath $nanarunDir -ErrorAction Stop
+    Write-Host "      ✓ Exclusion added for: $nanarunDir" -ForegroundColor Green
+} catch {
+    Write-Host "      ⚠ Could not add exclusion: $_" -ForegroundColor Red
+    Write-Host "      Continuing anyway..." -ForegroundColor Yellow
+}
+Write-Host ""
+
+# Step 2: Download NanaRun
+Write-Host "[2/5] Downloading NanaRun..." -ForegroundColor Yellow
+try {
+    $ProgressPreference = 'SilentlyContinue'  # Faster downloads
+    Invoke-WebRequest -Uri $nanarunUrl -OutFile $nanarunZip -UseBasicParsing -ErrorAction Stop
+    Write-Host "      ✓ Downloaded successfully" -ForegroundColor Green
+} catch {
+    Write-Host "      ✗ Download failed: $_" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Please download manually from:" -ForegroundColor Yellow
+    Write-Host "$nanarunUrl" -ForegroundColor Cyan
+    
+    # Remove exclusion
+    Remove-MpPreference -ExclusionPath $nanarunDir -ErrorAction SilentlyContinue
+    return
+}
+Write-Host ""
+
+# Step 3: Extract NanaRun
+Write-Host "[3/5] Extracting NanaRun..." -ForegroundColor Yellow
+try {
+    Expand-Archive -Path $nanarunZip -DestinationPath $nanarunExtracted -Force -ErrorAction Stop
+    Write-Host "      ✓ Extracted successfully" -ForegroundColor Green
+} catch {
+    Write-Host "      ✗ Extraction failed: $_" -ForegroundColor Red
+    
+    # Remove exclusion and cleanup
+    Remove-MpPreference -ExclusionPath $nanarunDir -ErrorAction SilentlyContinue
+    Remove-Item -Path $nanarunDir -Recurse -Force -ErrorAction SilentlyContinue
+    return
+}
+Write-Host ""
+
+# Find MinSudo.exe
 $arch = if ([System.Environment]::Is64BitOperatingSystem) { "x64" } else { "Win32" }
-$minSudoExe = Join-Path $extractedPath "$arch\MinSudo.exe"
+$minSudoExe = "$nanarunExtracted\$arch\MinSudo.exe"
 
 if (!(Test-Path $minSudoExe)) {
-    Write-Host "ERROR: MinSudo not found" -ForegroundColor Red
+    Write-Host "      ✗ MinSudo.exe not found at: $minSudoExe" -ForegroundColor Red
+    
+    # Remove exclusion and cleanup
+    Remove-MpPreference -ExclusionPath $nanarunDir -ErrorAction SilentlyContinue
+    Remove-Item -Path $nanarunDir -Recurse -Force -ErrorAction SilentlyContinue
     return
 }
 
-# Create script to try renaming or modifying the key instead
-$renameScript = @'
+# Step 4: Delete DeviceRegion registry values
+Write-Host "[4/5] Deleting DeviceRegion registry values..." -ForegroundColor Yellow
+
+# Set region to EU
+Set-WinHomeLocation -GeoId 94  # Ireland (EU)
+
+# Create the deletion script
+$deleteScript = @'
 $regKeyPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion"
 
-Write-Host "Attempting alternative methods..." -ForegroundColor Cyan
-Write-Host ""
-
-# Method 1: Try to RENAME the key instead of delete
-Write-Host "Method 1: Renaming the key to DeviceRegion.bak..." -ForegroundColor Yellow
-try {
-    $parentKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
-        "SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel",
-        $true
-    )
-    
-    if ($parentKey) {
-        # Try to rename by copying to new key and deleting old
-        $sourceKey = $parentKey.OpenSubKey("DeviceRegion", $true)
-        if ($sourceKey) {
-            $valueNames = $sourceKey.GetValueNames()
-            
-            # Create backup key
-            $backupKey = $parentKey.CreateSubKey("DeviceRegion.bak")
-            
-            # Copy all values
-            foreach ($valueName in $valueNames) {
-                $value = $sourceKey.GetValue($valueName)
-                $valueKind = $sourceKey.GetValueKind($valueName)
-                $backupKey.SetValue($valueName, $value, $valueKind)
-            }
-            
-            $backupKey.Close()
-            $sourceKey.Close()
-            
-            # Now try to delete original
-            $parentKey.DeleteSubKeyTree("DeviceRegion", $false)
-            $parentKey.Close()
-            
-            Write-Host "SUCCESS: Key renamed/moved!" -ForegroundColor Green
-            exit 0
-        }
-    }
-} catch {
-    Write-Host "Rename failed: $_" -ForegroundColor Red
-}
-
-# Method 2: Delete all VALUES inside the key instead of the key itself
-Write-Host ""
-Write-Host "Method 2: Deleting all values inside the key..." -ForegroundColor Yellow
 try {
     $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
         "SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion",
@@ -87,116 +100,101 @@ try {
     
     if ($key) {
         $valueNames = $key.GetValueNames()
-        Write-Host "Found $($valueNames.Count) values to delete" -ForegroundColor Gray
         
         foreach ($valueName in $valueNames) {
             try {
                 $key.DeleteValue($valueName)
-                Write-Host "  Deleted value: $valueName" -ForegroundColor Green
             } catch {
-                Write-Host "  Failed to delete: $valueName - $_" -ForegroundColor Red
+                # Silently continue
             }
         }
         
         $key.Close()
         
-        # Check if any values remain
+        # Verify all values are deleted
         $checkKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
             "SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion",
             $false
         )
         
         if ($checkKey.GetValueNames().Count -eq 0) {
-            Write-Host "SUCCESS: All values deleted! Key is now empty." -ForegroundColor Green
-            $checkKey.Close()
-            exit 0
+            exit 0  # Success
         } else {
-            Write-Host "Some values remain" -ForegroundColor Yellow
-            $checkKey.Close()
+            exit 1  # Some values remain
         }
+    } else {
+        exit 2  # Key doesn't exist
     }
 } catch {
-    Write-Host "Value deletion failed: $_" -ForegroundColor Red
+    exit 3  # Error occurred
 }
-
-# Method 3: Check what's actually in the key
-Write-Host ""
-Write-Host "Method 3: Inspecting key contents..." -ForegroundColor Yellow
-try {
-    $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
-        "SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion",
-        $false
-    )
-    
-    if ($key) {
-        Write-Host "Key information:" -ForegroundColor Cyan
-        Write-Host "  Subkey count: $($key.SubKeyCount)" -ForegroundColor White
-        Write-Host "  Value count: $($key.ValueCount)" -ForegroundColor White
-        
-        $valueNames = $key.GetValueNames()
-        foreach ($valueName in $valueNames) {
-            $value = $key.GetValue($valueName)
-            Write-Host "  Value: $valueName = $value" -ForegroundColor White
-        }
-        
-        $key.Close()
-    }
-} catch {
-    Write-Host "Inspection failed: $_" -ForegroundColor Red
-}
-
-Write-Host ""
-Write-Host "All alternative methods exhausted." -ForegroundColor Red
-exit 1
 '@
 
-# Save and run the script
-$scriptPath = "$env:TEMP\rename_deviceregion.ps1"
-$renameScript | Out-File -FilePath $scriptPath -Encoding UTF8 -Force
+$scriptPath = "$nanarunDir\delete_deviceregion.ps1"
+$deleteScript | Out-File -FilePath $scriptPath -Encoding UTF8 -Force
 
-Write-Host "Running alternative methods with TrustedInstaller..." -ForegroundColor Cyan
+# Run with MinSudo (silently)
+$process = Start-Process -FilePath $minSudoExe -ArgumentList "-U:T", "-P:E", "-ShowWindowMode:Hide", "powershell.exe", "-ExecutionPolicy", "Bypass", "-File", "`"$scriptPath`"" -Wait -PassThru -NoNewWindow
+
+# Check exit code
+if ($process.ExitCode -eq 0) {
+    Write-Host "      ✓ DeviceRegion values deleted successfully!" -ForegroundColor Green
+} elseif ($process.ExitCode -eq 2) {
+    Write-Host "      ℹ DeviceRegion key doesn't exist (already removed)" -ForegroundColor Cyan
+} else {
+    Write-Host "      ⚠ Some values may remain (Exit code: $($process.ExitCode))" -ForegroundColor Yellow
+}
 Write-Host ""
 
-& $minSudoExe -U:T -P:E -ShowWindowMode:Show powershell.exe -NoExit -ExecutionPolicy Bypass -File $scriptPath
+# Step 5: Cleanup
+Write-Host "[5/5] Cleaning up..." -ForegroundColor Yellow
 
-Start-Sleep -Seconds 3
-
-# Check results
-if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion") {
-    $key = Get-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion"
-    $valueCount = ($key | Get-ItemProperty).PSObject.Properties.Count - 4  # Subtract PowerShell default properties
-    
-    if ($valueCount -eq 0) {
-        Write-Host ""
-        Write-Host "========================================" -ForegroundColor Green
-        Write-Host "PARTIAL SUCCESS!" -ForegroundColor Green
-        Write-Host "DeviceRegion key is now EMPTY" -ForegroundColor Green
-        Write-Host "========================================" -ForegroundColor Green
-        Write-Host ""
-        Write-Host "The key still exists but has no values." -ForegroundColor Yellow
-        Write-Host "This may be sufficient for enabling EU privacy options." -ForegroundColor Yellow
-    } else {
-        Write-Host ""
-        Write-Host "Key still exists with values." -ForegroundColor Red
-        Write-Host ""
-        Write-Host "FINAL RECOMMENDATION:" -ForegroundColor Yellow
-        Write-Host "This registry key has unprecedented protection." -ForegroundColor White
-        Write-Host "You may need to:" -ForegroundColor White
-        Write-Host "  1. Boot from a Windows PE USB" -ForegroundColor Cyan
-        Write-Host "  2. Load the offline registry hive" -ForegroundColor Cyan
-        Write-Host "  3. Delete the key while Windows isn't running" -ForegroundColor Cyan
-    }
-} else {
-    Write-Host ""
-    Write-Host "========================================" -ForegroundColor Green
-    Write-Host "SUCCESS: DeviceRegion key deleted!" -ForegroundColor Green
-    Write-Host "========================================" -ForegroundColor Green
+# Remove Windows Defender exclusion
+try {
+    Remove-MpPreference -ExclusionPath $nanarunDir -ErrorAction Stop
+    Write-Host "      ✓ Defender exclusion removed" -ForegroundColor Green
+} catch {
+    Write-Host "      ⚠ Could not remove exclusion (you may need to remove it manually)" -ForegroundColor Yellow
 }
 
-Remove-Item $scriptPath -Force -ErrorAction SilentlyContinue
+# Delete temporary files
+Start-Sleep -Milliseconds 500
+Remove-Item -Path $nanarunDir -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host "      ✓ Temporary files removed" -ForegroundColor Green
+Write-Host ""
 
+# Final verification
+Write-Host "========================================" -ForegroundColor Cyan
+if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion") {
+    $key = Get-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion"
+    $properties = $key | Get-ItemProperty
+    $valueCount = ($properties.PSObject.Properties | Where-Object { $_.Name -notmatch '^PS' }).Count
+    
+    if ($valueCount -eq 0) {
+        Write-Host "  ✓ SUCCESS!" -ForegroundColor Green
+        Write-Host "  DeviceRegion key is now empty" -ForegroundColor Green
+    } else {
+        Write-Host "  ⚠ PARTIAL SUCCESS" -ForegroundColor Yellow
+        Write-Host "  Some values may remain" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "  ✓ SUCCESS!" -ForegroundColor Green
+    Write-Host "  DeviceRegion key deleted" -ForegroundColor Green
+}
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
+
+# Open Windows Settings
+Write-Host "Opening Windows Privacy Settings..." -ForegroundColor Cyan
 Start-Process "ms-settings:privacy"
 
 Write-Host ""
+Write-Host "EU privacy options should now be available!" -ForegroundColor Green
+Write-Host "You may need to restart Windows for all changes to take effect." -ForegroundColor Yellow
+Write-Host ""
+Write-Host "To revert to your original region, run:" -ForegroundColor Gray
+Write-Host "Set-WinHomeLocation -GeoId $origGeo" -ForegroundColor White
+Write-Host ""
 Write-Host "Made with love by Harman Singh Hira" -ForegroundColor Gray
 Write-Host "https://me.hsinghhira.me" -ForegroundColor Gray
+Write-Host ""
