@@ -1,64 +1,31 @@
-# Store original GeoID
-$origGeo = (Get-WinHomeLocation).GeoId
+# Ensure you run this in an Elevated PowerShell (Admin) window
+$regPath = "SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion"
+$fullPath = "HKLM:\$regPath"
 
-# Change to temporary region
-Set-WinHomeLocation -GeoId 242
+if (Test-Path $fullPath) {
+    Write-Host "Key found. Attempting to take ownership..." -ForegroundColor Cyan
+    
+    # 1. Take Ownership
+    $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($regPath, [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree, [System.Security.AccessControl.RegistryRights]::TakeOwnership)
+    $acl = $key.GetAccessControl()
+    $me = [System.Security.Principal.NTAccount]"Administrators"
+    $acl.SetOwner($me)
+    $key.SetAccessControl($acl)
 
-$regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion"
+    # 2. Grant Full Control to Administrators
+    $acl = $key.GetAccessControl()
+    $rule = New-Object System.Security.AccessControl.RegistryAccessRule("Administrators", "FullControl", "Allow")
+    $acl.SetAccessRule($rule)
+    $key.SetAccessControl($acl)
+    $key.Close()
 
-Write-Host "Checking if DeviceRegion exists..."
-if (Test-Path $regPath) {
-    Write-Host "DeviceRegion key found. Attempting advanced deletion..."
-    
-    # Method: Use .NET Registry classes with TakeOwnership
-    Add-Type @"
-    using System;
-    using System.Runtime.InteropServices;
-    
-    public class RegistryRights {
-        [DllImport("advapi32.dll", SetLastError = true)]
-        public static extern int RegOpenKeyEx(UIntPtr hKey, string subKey, int ulOptions, int samDesired, out UIntPtr hkResult);
-        
-        [DllImport("advapi32.dll", SetLastError = true)]
-        public static extern int RegDeleteKey(UIntPtr hKey, string subKey);
-        
-        [DllImport("advapi32.dll", SetLastError = true)]
-        public static extern int RegCloseKey(UIntPtr hKey);
-        
-        public const int KEY_ALL_ACCESS = 0xF003F;
-        public static readonly UIntPtr HKEY_LOCAL_MACHINE = new UIntPtr(0x80000002u);
-    }
-"@
-    
+    # 3. Now try to delete
     try {
-        $subKey = "SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion"
-        [UIntPtr]$hKey = [UIntPtr]::Zero
-        
-        $result = [RegistryRights]::RegDeleteKey([RegistryRights]::HKEY_LOCAL_MACHINE, $subKey)
-        
-        if ($result -eq 0) {
-            Write-Host "DeviceRegion deleted via Win32 API!" -ForegroundColor Green
-        } else {
-            Write-Host "Win32 API deletion failed with code: $result" -ForegroundColor Yellow
-        }
+        Remove-Item -Path $fullPath -Recurse -Force
+        Write-Host "SUCCESS: DeviceRegion key deleted!" -ForegroundColor Green
     } catch {
-        Write-Host "Error: $_" -ForegroundColor Red
+        Write-Host "Deletion failed: $($_.Exception.Message)" -ForegroundColor Red
     }
-    
-    # Verify if it's still there
-    Start-Sleep -Milliseconds 500
-    if (Test-Path $regPath) {
-        Write-Host "WARNING: DeviceRegion key still exists - Windows may be protecting/recreating it" -ForegroundColor Yellow
-    } else {
-        Write-Host "SUCCESS: DeviceRegion key is gone!" -ForegroundColor Green
-    }
+} else {
+    Write-Host "Key not found. Nothing to delete." -ForegroundColor Yellow
 }
-
-# Open Settings
-Start-Process "ms-settings:"
-
-# Restore original region
-Set-WinHomeLocation -GeoId $origGeo
-
-Write-Host "Made with love by Harman Singh Hira"
-Write-Host "https://me.hsinghhira.me"
