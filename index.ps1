@@ -9,7 +9,7 @@ $origGeo = (Get-WinHomeLocation).GeoId
 # Display header
 Write-Host ""
 Write-Host "╔════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║   Windows EU Region Privacy Enabler v2.0              ║" -ForegroundColor Cyan
+Write-Host "║   Windows EU Region Privacy Enabler v2.0               ║" -ForegroundColor Cyan
 Write-Host "╚════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Your current region (GeoID: $origGeo) will be restored after completion" -ForegroundColor Gray
@@ -19,14 +19,14 @@ Write-Host ""
 Write-Host "  [1] Manual (Safe & Simple)" -ForegroundColor Green
 Write-Host "      ✓ No antivirus issues" -ForegroundColor Gray
 Write-Host "      ✓ You control every step" -ForegroundColor Gray
-Write-Host "      ✓ Takes ~2 minutes" -ForegroundColor Gray
+Write-Host "      ✓ Takes ~1 minutes" -ForegroundColor Gray
 Write-Host "      ⚠ Requires basic Registry editing" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "  [2] Automatic (Fast)" -ForegroundColor Cyan
 Write-Host "      ✓ Fully automated" -ForegroundColor Gray
 Write-Host "      ✓ Takes ~30 seconds" -ForegroundColor Gray
 Write-Host "      ⚠ May need to disable antivirus temporarily" -ForegroundColor Yellow
-Write-Host "      ⚠ Downloads external tool (NanaRun)" -ForegroundColor Yellow
+Write-Host "      ⚠ Download external tool (NanaRun)" -ForegroundColor Yellow
 Write-Host ""
 
 # Get user choice
@@ -85,9 +85,6 @@ if ($choice -eq "1") {
     Write-Host "Press any key to open Registry Editor..." -ForegroundColor Cyan
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     
-    # Open Registry Editor at the specific key
-    $regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion"
-    
     # Use reg.exe to open regedit at the specific path
     $regKey = "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion"
     
@@ -112,8 +109,14 @@ if ($choice -eq "1") {
     Write-Host "press any key to continue..." -ForegroundColor Cyan
     $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
     Write-Host ""
-    
-    # Step 4: Restore original region
+
+    # Step 4: Open Settings
+    Write-Host "[5/5] Opening Windows Settings..." -ForegroundColor Yellow
+    Start-Process "ms-settings:privacy"
+    Write-Host "      ✓ Settings opened" -ForegroundColor Green
+    Write-Host ""
+
+    # Step 5: Restore original region
     Write-Host "[4/5] Restoring your original region..." -ForegroundColor Yellow
     try {
         Set-WinHomeLocation -GeoId $origGeo
@@ -123,12 +126,6 @@ if ($choice -eq "1") {
         Write-Host "      You can manually restore it by running:" -ForegroundColor Gray
         Write-Host "      Set-WinHomeLocation -GeoId $origGeo" -ForegroundColor White
     }
-    Write-Host ""
-    
-    # Step 5: Open Settings
-    Write-Host "[5/5] Opening Windows Settings..." -ForegroundColor Yellow
-    Start-Process "ms-settings:privacy"
-    Write-Host "      ✓ Settings opened" -ForegroundColor Green
     Write-Host ""
     
     # Success message
