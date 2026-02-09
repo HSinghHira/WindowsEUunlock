@@ -1,36 +1,20 @@
-# Store original GeoID and create restore script
+# Store original GeoID
 $origGeo = (Get-WinHomeLocation).GeoId
-
-# Create a restore script in user's Documents folder
-$restoreScriptPath = "$env:USERPROFILE\Documents\Restore_Original_Region.ps1"
-$restoreScript = @"
-# Restore Original Windows Region
-# Created: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-
-Write-Host "Restoring your original Windows region..." -ForegroundColor Cyan
-Set-WinHomeLocation -GeoId $origGeo
-Write-Host "Region restored to GeoID: $origGeo" -ForegroundColor Green
-Write-Host ""
-Write-Host "Press any key to exit..."
-`$null = `$Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-"@
-
-$restoreScript | Out-File -FilePath $restoreScriptPath -Encoding UTF8 -Force
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Windows EU Region Privacy Enabler" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
+Write-Host "ℹ Your current region (GeoID: $origGeo) will be restored after completion" -ForegroundColor Cyan
+Write-Host ""
 Write-Host "This script will:" -ForegroundColor White
 Write-Host "  1. Add temporary Windows Defender exclusion" -ForegroundColor Gray
 Write-Host "  2. Download NanaRun automatically" -ForegroundColor Gray
 Write-Host "  3. Delete DeviceRegion registry values" -ForegroundColor Gray
 Write-Host "  4. Enable EU privacy options" -ForegroundColor Gray
-Write-Host "  5. Clean up and remove exclusion" -ForegroundColor Gray
-Write-Host ""
-Write-Host "ℹ A restore script has been saved to:" -ForegroundColor Cyan
-Write-Host "  $restoreScriptPath" -ForegroundColor White
+Write-Host "  5. Restore your original region" -ForegroundColor Gray
+Write-Host "  6. Clean up and remove exclusion" -ForegroundColor Gray
 Write-Host ""
 
 # Set up paths
@@ -45,7 +29,7 @@ if (!(Test-Path $nanarunDir)) {
 }
 
 # Step 1: Add Windows Defender exclusion
-Write-Host "[1/5] Adding Windows Defender exclusion..." -ForegroundColor Yellow
+Write-Host "[1/6] Adding Windows Defender exclusion..." -ForegroundColor Yellow
 $exclusionAdded = $false
 try {
     Add-MpPreference -ExclusionPath $nanarunDir -ErrorAction Stop
@@ -71,7 +55,7 @@ try {
 Write-Host ""
 
 # Step 2: Download NanaRun
-Write-Host "[2/5] Downloading NanaRun..." -ForegroundColor Yellow
+Write-Host "[2/6] Downloading NanaRun..." -ForegroundColor Yellow
 try {
     $ProgressPreference = 'SilentlyContinue'  # Faster downloads
     Invoke-WebRequest -Uri $nanarunUrl -OutFile $nanarunZip -UseBasicParsing -ErrorAction Stop
@@ -126,7 +110,7 @@ try {
 Write-Host ""
 
 # Step 3: Extract NanaRun
-Write-Host "[3/5] Extracting NanaRun..." -ForegroundColor Yellow
+Write-Host "[3/6] Extracting NanaRun..." -ForegroundColor Yellow
 try {
     Expand-Archive -Path $nanarunZip -DestinationPath $nanarunExtracted -Force -ErrorAction Stop
     Write-Host "      ✓ Extracted successfully" -ForegroundColor Green
@@ -176,9 +160,9 @@ if (!(Test-Path $minSudoExe)) {
 }
 
 # Step 4: Delete DeviceRegion registry values
-Write-Host "[4/5] Deleting DeviceRegion registry values..." -ForegroundColor Yellow
+Write-Host "[4/6] Deleting DeviceRegion registry values..." -ForegroundColor Yellow
 
-# Set region to EU
+# Set region to EU temporarily
 Set-WinHomeLocation -GeoId 94  # Ireland (EU)
 
 # Create the deletion script
@@ -274,8 +258,20 @@ try {
 }
 Write-Host ""
 
-# Step 5: Cleanup
-Write-Host "[5/5] Cleaning up..." -ForegroundColor Yellow
+# Step 5: Restore original region
+Write-Host "[5/6] Restoring your original region..." -ForegroundColor Yellow
+try {
+    Set-WinHomeLocation -GeoId $origGeo
+    Write-Host "      ✓ Region restored to GeoID: $origGeo" -ForegroundColor Green
+} catch {
+    Write-Host "      ⚠ Could not restore region: $_" -ForegroundColor Yellow
+    Write-Host "      You can manually restore it by running:" -ForegroundColor Gray
+    Write-Host "      Set-WinHomeLocation -GeoId $origGeo" -ForegroundColor White
+}
+Write-Host ""
+
+# Step 6: Cleanup
+Write-Host "[6/6] Cleaning up..." -ForegroundColor Yellow
 
 # Remove Windows Defender exclusion
 if ($exclusionAdded) {
@@ -319,12 +315,10 @@ Write-Host "Opening Windows Privacy Settings..." -ForegroundColor Cyan
 Start-Process "ms-settings:privacy"
 
 Write-Host ""
-Write-Host "EU privacy options should now be available!" -ForegroundColor Green
-Write-Host "You may need to restart Windows for all changes to take effect." -ForegroundColor Yellow
+Write-Host "✓ EU privacy options should now be available!" -ForegroundColor Green
+Write-Host "✓ Your original region has been restored" -ForegroundColor Green
 Write-Host ""
-Write-Host "ℹ To restore your original region, run this file:" -ForegroundColor Cyan
-Write-Host "  $restoreScriptPath" -ForegroundColor White
-Write-Host "  (Just double-click it or right-click → Run with PowerShell)" -ForegroundColor Gray
+Write-Host "You may need to restart Windows for all changes to take effect." -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Made with love by Harman Singh Hira" -ForegroundColor Gray
 Write-Host "https://me.hsinghhira.me" -ForegroundColor Gray
