@@ -6,15 +6,7 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  Windows EU Region Privacy Enabler" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "ℹ Your current region (GeoID: $origGeo) will be restored after completion" -ForegroundColor Cyan
-Write-Host ""
-Write-Host "This script will:" -ForegroundColor White
-Write-Host "  1. Add temporary Windows Defender exclusion" -ForegroundColor Gray
-Write-Host "  2. Download NanaRun automatically" -ForegroundColor Gray
-Write-Host "  3. Delete DeviceRegion registry values" -ForegroundColor Gray
-Write-Host "  4. Enable EU privacy options" -ForegroundColor Gray
-Write-Host "  5. Restore your original region" -ForegroundColor Gray
-Write-Host "  6. Clean up and remove exclusion" -ForegroundColor Gray
+Write-Host "Your current region (GeoID: $origGeo) will be restored after completion" -ForegroundColor Cyan
 Write-Host ""
 
 # Set up paths
@@ -312,7 +304,7 @@ Write-Host ""
 
 # Open Windows Settings
 Write-Host "Opening Windows Privacy Settings..." -ForegroundColor Cyan
-Start-Process "ms-settings:privacy"
+Start-Process "ms-settings:regionlanguage"
 
 Write-Host ""
 Write-Host "✓ EU privacy options should now be available!" -ForegroundColor Green
