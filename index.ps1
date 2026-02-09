@@ -4,28 +4,15 @@ $origGeo = (Get-WinHomeLocation).GeoId
 # Change to temporary region
 Set-WinHomeLocation -GeoId 242
 
-# Delete DeviceRegion key using reg.exe with force
-$regPath = "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion"
+Write-Host "Deleting DeviceRegion registry key..."
 
-if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion") {
-    Write-Host "Attempting to delete DeviceRegion key..."
-    
-    # Take ownership using takeown
-    $takeownResult = & takeown /f "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion" /r /d y 2>&1
-    
-    # Grant permissions using icacls (for registry, we use reg command)
-    & reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion" /f 2>&1 | Out-Null
-    
-    # Delete the key
-    $deleteResult = & reg delete $regPath /f 2>&1
-    
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "DeviceRegion key deleted successfully!"
-    } else {
-        Write-Host "Failed to delete DeviceRegion key. Error: $deleteResult"
-    }
+# Use reg delete command directly - this often has better permissions than PowerShell
+$process = Start-Process -FilePath "reg" -ArgumentList "delete", "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion", "/f" -Wait -PassThru -NoNewWindow
+
+if ($process.ExitCode -eq 0) {
+    Write-Host "DeviceRegion key deleted successfully!" -ForegroundColor Green
 } else {
-    Write-Host "DeviceRegion key not found."
+    Write-Host "Could not delete DeviceRegion key. You may need TrustedInstaller permissions." -ForegroundColor Yellow
 }
 
 # Open Settings
