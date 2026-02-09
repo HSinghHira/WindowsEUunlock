@@ -1,42 +1,89 @@
 # Store original GeoID
 $origGeo = (Get-WinHomeLocation).GeoId
 
-Write-Host "Setting Windows region to EU for privacy options..." -ForegroundColor Cyan
+Set-WinHomeLocation -GeoId 94  # Ireland (EU)
 
-# Set GeoID to a European country (e.g., 94 = Ireland, 242 = Sweden, 84 = France)
-Set-WinHomeLocation -GeoId 94
+Write-Host "Attempting to delete DeviceRegion using SYSTEM privileges with logging..." -ForegroundColor Cyan
 
-# Set the registry values that control EU privacy features
-$regPaths = @(
-    "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection",
-    "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Privacy"
-)
+# Create a PowerShell script to run as SYSTEM with output logging
+$systemScript = @'
+$logFile = "$env:TEMP\deviceregion_delete.log"
+$regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion"
 
-# Enable EU privacy settings
-try {
-    # Set region to EEA (European Economic Area)
-    if (!(Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection")) {
-        New-Item -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection" -Force | Out-Null
+"Starting deletion attempt..." | Out-File $logFile
+
+if (Test-Path $regPath) {
+    "DeviceRegion key exists. Attempting deletion..." | Out-File $logFile -Append
+    
+    # Method 1: Direct PowerShell removal
+    try {
+        Remove-Item -Path $regPath -Recurse -Force -ErrorAction Stop
+        "SUCCESS: Deleted with Remove-Item" | Out-File $logFile -Append
+    } catch {
+        "FAILED Remove-Item: $_" | Out-File $logFile -Append
+        
+        # Method 2: .NET Registry deletion
+        try {
+            $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
+                "SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel",
+                $true
+            )
+            $key.DeleteSubKeyTree("DeviceRegion")
+            $key.Close()
+            "SUCCESS: Deleted with .NET DeleteSubKeyTree" | Out-File $logFile -Append
+        } catch {
+            "FAILED .NET method: $_" | Out-File $logFile -Append
+            
+            # Method 3: CMD reg delete
+            $result = & reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion" /f 2>&1
+            "reg.exe result: $result" | Out-File $logFile -Append
+        }
     }
     
-    Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection" -Name "AllowTelemetry" -Value 0 -Type DWord -Force
-    
-    # Set language/region to EU country
-    Set-ItemProperty -Path "HKCU:\Control Panel\International\Geo" -Name "Nation" -Value 94 -Type String -Force
-    
-    Write-Host "EU region settings applied!" -ForegroundColor Green
-    Write-Host "Opening Windows Settings to verify..." -ForegroundColor Yellow
-    
-} catch {
-    Write-Host "Error applying settings: $_" -ForegroundColor Red
+    # Verify deletion
+    if (Test-Path $regPath) {
+        "VERIFICATION: Key still exists after deletion attempts" | Out-File $logFile -Append
+    } else {
+        "VERIFICATION: Key successfully deleted!" | Out-File $logFile -Append
+    }
+} else {
+    "DeviceRegion key does not exist" | Out-File $logFile -Append
 }
+
+"Deletion attempt completed." | Out-File $logFile -Append
+'@
+
+$systemScript | Out-File -FilePath "$env:TEMP\delete_deviceregion.ps1" -Encoding UTF8 -Force
+
+# Run as SYSTEM using PSExec
+Write-Host "Running deletion script as SYSTEM..." -ForegroundColor Yellow
+& PsExec64.exe -accepteula -s powershell.exe -ExecutionPolicy Bypass -File "$env:TEMP\delete_deviceregion.ps1"
+
+# Wait a moment for the log to be written
+Start-Sleep -Seconds 2
+
+# Read and display the log
+if (Test-Path "$env:TEMP\deviceregion_delete.log") {
+    Write-Host "`n=== SYSTEM Script Output ===" -ForegroundColor Cyan
+    Get-Content "$env:TEMP\deviceregion_delete.log"
+    Write-Host "============================`n" -ForegroundColor Cyan
+} else {
+    Write-Host "Warning: Log file not created" -ForegroundColor Yellow
+}
+
+# Verify if the key is gone
+if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion") {
+    Write-Host "STATUS: DeviceRegion key still exists" -ForegroundColor Red
+} else {
+    Write-Host "STATUS: DeviceRegion key successfully deleted!" -ForegroundColor Green
+}
+
+# Cleanup
+Remove-Item "$env:TEMP\delete_deviceregion.ps1" -Force -ErrorAction SilentlyContinue
+Remove-Item "$env:TEMP\deviceregion_delete.log" -Force -ErrorAction SilentlyContinue
 
 # Open Settings
 Start-Process "ms-settings:privacy"
-
-Write-Host "`nNOTE: You may need to restart Windows for all privacy options to appear." -ForegroundColor Yellow
-Write-Host "`nTo revert to your original region later, run:" -ForegroundColor Cyan
-Write-Host "Set-WinHomeLocation -GeoId $origGeo" -ForegroundColor White
 
 Write-Host "`nMade with love by Harman Singh Hira"
 Write-Host "https://me.hsinghhira.me"
