@@ -4,40 +4,25 @@ $origGeo = (Get-WinHomeLocation).GeoId
 # Change to temporary region
 Set-WinHomeLocation -GeoId 242
 
-# Take ownership and delete DeviceRegion key
-$regPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion"
+# Delete DeviceRegion key using reg.exe with force
+$regPath = "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion"
 
-if (Test-Path $regPath) {
-    Write-Host "Taking ownership of DeviceRegion key..."
+if (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion") {
+    Write-Host "Attempting to delete DeviceRegion key..."
     
-    # Enable privilege to take ownership
-    $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
-        "SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion",
-        [Microsoft.Win32.RegistryKeyPermissionCheck]::ReadWriteSubTree,
-        [System.Security.AccessControl.RegistryRights]::TakeOwnership
-    )
+    # Take ownership using takeown
+    $takeownResult = & takeown /f "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion" /r /d y 2>&1
     
-    if ($key) {
-        $acl = $key.GetAccessControl()
-        $acl.SetOwner([System.Security.Principal.WindowsIdentity]::GetCurrent().User)
-        $key.SetAccessControl($acl)
-        
-        # Grant full control to current user
-        $acl = $key.GetAccessControl()
-        $rule = New-Object System.Security.AccessControl.RegistryAccessRule(
-            [System.Security.Principal.WindowsIdentity]::GetCurrent().User,
-            [System.Security.AccessControl.RegistryRights]::FullControl,
-            [System.Security.AccessControl.InheritanceFlags]::ContainerInherit,
-            [System.Security.AccessControl.PropagationFlags]::None,
-            [System.Security.AccessControl.AccessControlType]::Allow
-        )
-        $acl.AddAccessRule($rule)
-        $key.SetAccessControl($acl)
-        $key.Close()
-        
-        Write-Host "Deleting DeviceRegion key..."
-        Remove-Item $regPath -Recurse -Force -ErrorAction Stop
+    # Grant permissions using icacls (for registry, we use reg command)
+    & reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Control Panel\DeviceRegion" /f 2>&1 | Out-Null
+    
+    # Delete the key
+    $deleteResult = & reg delete $regPath /f 2>&1
+    
+    if ($LASTEXITCODE -eq 0) {
         Write-Host "DeviceRegion key deleted successfully!"
+    } else {
+        Write-Host "Failed to delete DeviceRegion key. Error: $deleteResult"
     }
 } else {
     Write-Host "DeviceRegion key not found."
